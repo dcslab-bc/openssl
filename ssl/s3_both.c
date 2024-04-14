@@ -123,6 +123,188 @@
 #include <openssl/objects.h>
 #include <openssl/evp.h>
 #include <openssl/x509.h>
+#include <openssl/hmac.h>
+#include <openssl/logs.h>
+#include <stdint.h>
+
+#include "matls.h"
+#include "logs.h"
+
+#ifndef OPENSSL_NO_MATLS
+
+int make_signature(unsigned char **sigblk, unsigned char *msg, int msg_len, EVP_PKEY *priv, int nid, int *sigblk_len)
+{
+	int rc;
+	EVP_MD_CTX *ctx;
+	unsigned char *sig, *p;
+	size_t sig_len;
+
+	ctx = EVP_MD_CTX_create();
+	if (ctx == NULL)
+	{
+		//printf("EVP_MD_CTX_create failed\n");
+		goto err;
+	}
+
+	// Initialize the md according to nid
+	switch (nid)
+	{
+		case NID_sha256:
+			rc = EVP_DigestSignInit(ctx, NULL, EVP_sha256(), NULL, priv);
+			break;
+		default:
+			//printf("Unknown Hash algorithm\n");
+			goto err;
+	}
+
+	if (rc != 1)
+	{
+		//printf("PROGRESS: DigestSign Init Failed\n");
+		goto err;
+	}
+
+	rc = EVP_DigestSignUpdate(ctx, msg, msg_len);
+	if (rc != 1)
+	{
+		//printf("PROGRESS: DigestSign Update Failed\n");
+		goto err;
+	}
+
+	rc = EVP_DigestSignFinal(ctx, NULL, &sig_len);
+	if (rc != 1)
+	{
+		//printf("PROGRESS: DigestSign Final Failed\n");
+		goto err;
+	}
+	sig = OPENSSL_malloc(sig_len);
+
+	if (sig == NULL)
+	{
+		//printf("PROGRESS: OPENSSL_malloc error\n");
+		goto err;
+	}
+
+	rc = EVP_DigestSignFinal(ctx, sig, &sig_len);
+	if (rc != 1)
+	{
+		//printf("PROGRESS: DigestSign Final Failed\n");
+		goto err;
+	}
+
+	*sigblk_len = sig_len;
+	*sigblk = (unsigned char *)OPENSSL_malloc(*sigblk_len);
+	p = *sigblk;
+	memcpy(p, sig, sig_len);
+	OPENSSL_free(sig);
+	EVP_MD_CTX_cleanup(ctx);
+
+	return 1;
+
+err:
+	EVP_MD_CTX_cleanup(ctx);
+
+	return 0;
+}
+
+int verification(unsigned char *msg, int msg_len, uint16_t sig_type, uint16_t sig_len, unsigned char *sig, EVP_PKEY *pub)
+{
+  int rc;
+  EVP_MD_CTX *ctx;
+
+  ctx = EVP_MD_CTX_create();
+  if (ctx == NULL)
+  {
+    MA_LOG("EVP_MD_CTX_create error");
+    return 0;
+  }
+
+  switch (sig_type)
+  {
+    case NID_sha1:
+      rc = EVP_DigestVerifyInit(ctx, NULL, EVP_sha1(), NULL, pub);
+      break;
+    case NID_sha224:
+      rc = EVP_DigestVerifyInit(ctx, NULL, EVP_sha224(), NULL, pub);
+      break;
+    case NID_sha256:
+      rc = EVP_DigestVerifyInit(ctx, NULL, EVP_sha256(), NULL, pub);
+      break;
+    default:
+      MA_LOG("Unknown Signature Type");
+  }
+
+  if (rc != 1)
+  {
+    MA_LOG("EVP_DigestVerifyInit error");
+    goto err;
+  }
+
+  rc = EVP_DigestVerifyUpdate(ctx, msg, msg_len);
+  if (rc != 1)
+  {
+    MA_LOG("EVP_DigestVerifyUpdate failed");
+    goto err;
+  }
+
+  rc = EVP_DigestVerifyFinal(ctx, sig, sig_len);
+  if (rc != 1)
+  {
+    MA_LOG("EVP_DigestVerifyFinal failed");
+    goto err;
+  }
+  else
+    MA_LOG("Verify Success");
+
+  EVP_MD_CTX_cleanup(ctx);
+  return 1;
+err:
+  EVP_MD_CTX_cleanup(ctx);
+  return 0;
+}
+
+int digest_message(unsigned char *message, size_t message_len, unsigned char **digest, unsigned int *digest_len)
+{
+
+	EVP_MD_CTX *ctx;
+
+	ctx = EVP_MD_CTX_create();
+
+	if(ctx == NULL)
+	{
+		//printf("EVP_MD_CTX_create failed\n");
+		goto err;
+	}
+	if(1 != EVP_DigestInit_ex(ctx, EVP_sha256(), NULL))
+	{
+		//printf("EVP_DigestInit failed\n");
+		goto err;
+	}
+	// what is EVP_DigestSignInit in ttpa_func.c
+	if(1 != EVP_DigestUpdate(ctx, message, message_len))
+	{
+		//printf("EVP_DigestUpdate failed\n");
+		goto err;
+	}
+	if((*digest = (unsigned char *)OPENSSL_malloc(EVP_MD_size(EVP_sha256()))) == NULL)
+	{
+		//printf("OPENSSL_malloc failed\n");
+		goto err;
+	}
+	if(1 != EVP_DigestFinal_ex(ctx, *digest, digest_len))
+	{
+		//printf("EVP_DigestFinal_ex failed\n");
+		goto err;
+	}
+	EVP_MD_CTX_destroy(ctx);
+
+	return 1;
+
+err:
+	EVP_MD_CTX_cleanup(ctx);
+
+	return 0;
+}
+#endif /* OPENSSL_NO_MATLS */
 
 /* send s->init_buf in records of type 'type' (SSL3_RT_HANDSHAKE or SSL3_RT_CHANGE_CIPHER_SPEC) */
 int ssl3_do_write(SSL *s, int type)
@@ -165,6 +347,7 @@ int ssl3_send_finished(SSL *s, int a, int b, const char *sender, int slen)
 			return 0;
 		s->s3->tmp.finish_md_len = i;
 		memcpy(p, s->s3->tmp.finish_md, i);
+		PRINTK("verify data", s->s3->tmp.finish_md, i);
 		p+=i;
 		l=i;
 
@@ -204,6 +387,190 @@ int ssl3_send_finished(SSL *s, int a, int b, const char *sender, int slen)
 	return(ssl3_do_write(s,SSL3_RT_HANDSHAKE));
 	}
 
+#ifndef OPENSSL_NO_MATLS
+
+int matls_set_parameters(SSL *s, unsigned char *parameters)
+{
+  int poff, hash_of_ms_length;
+  unsigned char hash_of_ms[SHA256_DIGEST_LENGTH];
+  EVP_MD_CTX *ctx;
+#ifdef DEBUG
+  unsigned char *tmp;
+#endif /* DEBUG */
+
+  poff = 0;
+
+	/* version (2) */
+  parameters[poff++] = s->version >> 8;
+  parameters[poff++] = s->version & 0xff;
+  PRINTK("Put Version Information", parameters, poff);
+
+	/* ciphersuit (2) */
+	ssl3_put_cipher_by_char(s->s3->tmp.new_cipher, &(parameters[poff]));
+  poff += MATLS_CIPHERSUITE_LENGTH;
+#ifdef DEBUG
+  tmp = parameters + poff - MATLS_CIPHERSUITE_LENGTH;
+	PRINTK("Put Ciphersuite Information", tmp, 
+      MATLS_CIPHERSUITE_LENGTH);
+#endif /* DEBUG */
+
+  /* hash of master secret (32) */
+  ctx = EVP_MD_CTX_create();
+  EVP_DigestInit(ctx, EVP_sha256());
+  EVP_DigestUpdate(ctx, s->session->master_key, s->session->master_key_length);
+  EVP_DigestFinal(ctx, hash_of_ms, &hash_of_ms_length);
+  EVP_MD_CTX_cleanup(ctx);
+  memcpy(parameters + poff, hash_of_ms, MATLS_HASH_OF_MASTER_SECRET_LENGTH);
+  poff += MATLS_HASH_OF_MASTER_SECRET_LENGTH;
+  PRINTK("Put H(ms)", hash_of_ms, MATLS_HASH_OF_MASTER_SECRET_LENGTH);
+
+	/* ti (12) */
+	memcpy(parameters + poff, s->s3->tmp.finish_md, MATLS_TRANSCRIPT_LENGTH);
+	poff += MATLS_TRANSCRIPT_LENGTH;
+  PRINTK("Put Transcript", s->s3->tmp.finish_md, MATLS_TRANSCRIPT_LENGTH);
+
+  PRINTK("Full Parameters", parameters, poff);
+
+  return poff;
+}
+
+int matls_send_extended_finished(SSL *s)
+{
+	unsigned char *p, *d, *pp, *tmp1, *tmp2, *msg, *parameters;
+	int i, mlen, slen, plen, tlen, off, poff;
+	unsigned long l;
+	unsigned char *digest;
+	unsigned int digest_len;
+	unsigned char *sigblk;
+	int sigblk_len;
+
+  off = 0; poff = 0;
+
+	if (s->state == SSL3_ST_SW_EXTENDED_FINISHED_A)
+	{
+		d =(unsigned char *)s->init_buf->data;
+		p = &(d[4]);
+
+    *(d++) = SSL3_MT_EXTENDED_FINISHED;
+
+    mlen = 0, slen = 0;
+    if (s->middlebox)
+    {
+      plen = 2 * MATLS_P_LENGTH;
+    }
+    else // Server
+    {
+      plen = MATLS_P_LENGTH;
+    }
+    MA_LOG("Length of Preset: %d", plen);
+
+    // the buffer to include version, ciphersuite, h(ms), and tls_unique
+    parameters = (unsigned char *)malloc(plen);
+
+    poff += matls_set_parameters(s, parameters + poff);
+    /* Get the security parameters from another segment */
+    if (s->middlebox)
+    {
+      while (!(s->pair)) {}
+      poff += matls_set_parameters(s->pair, parameters);
+    }
+
+    MA_LOG("Length of parameters: %d, preset: %d", poff, plen);
+		PRINTK("Before HMAC", parameters, poff);
+
+    /* HMAC on parameters */
+    if (s->middlebox)
+	  {
+		  PRINTK("Used Accountability Key", s->mb_info->accountability_keys[((s->server + 1) % 2)], SSL_MAX_ACCOUNTABILITY_KEY_LENGTH);
+      digest = HMAC(EVP_sha256(), s->mb_info->accountability_keys[((s->server + 1) % 2)], 
+          SSL_MAX_ACCOUNTABILITY_KEY_LENGTH, parameters, plen, NULL, &digest_len);
+	  }
+    else
+	  {
+		  PRINTK("Used Accountability Key", s->mb_info->accountability_keys[0], SSL_MAX_ACCOUNTABILITY_KEY_LENGTH);
+      digest = HMAC(EVP_sha256(), s->mb_info->accountability_keys[0], 
+          SSL_MAX_ACCOUNTABILITY_KEY_LENGTH, parameters, plen, NULL, &digest_len);
+	  }
+
+    free(parameters);
+
+	  PRINTK("HMAC", digest, digest_len);
+
+		/* make signature block */
+		if (!make_signature(&sigblk, digest, digest_len, (s->cert->key->privatekey), 
+          NID_sha256, &sigblk_len))
+		{
+			MA_LOG("ERROR: make the signature block failed");
+			return 0;
+		}
+		MA_LOG("PROGRESS: make the signature block");
+
+    if (s->middlebox)
+    {
+      tlen = 2 + TLS_MD_ID_SIZE + MATLS_P_LENGTH + sigblk_len + s->extended_finished_msg_len;
+    }
+    else
+    {
+      tlen = 2 + TLS_MD_ID_SIZE + sigblk_len + s->extended_finished_msg_len;
+    }
+
+    BUF_MEM_grow(s->init_buf, tlen);
+    pp = p;
+
+    /* Put the block length */
+    s2n(tlen, p);
+    l = 2;
+
+    /* Put the identifier */
+    if (s->middlebox)
+    {
+      memcpy(p, s->mb_info->id_table[((s->server + 1) % 2)], 
+          s->mb_info->id_length[((s->server + 1) % 2)]);
+      p += s->mb_info->id_length[((s->server + 1) % 2)];
+      l += s->mb_info->id_length[((s->server + 1) % 2)];
+    }
+    else
+    {
+      memcpy(p, s->mb_info->id_table[0], s->mb_info->id_length[0]);
+      p += s->mb_info->id_length[0];
+      l += s->mb_info->id_length[0];
+    }
+
+    PRINTK("Put the identifier", pp, l);
+
+    /* Put the parameter of another segment */
+    if (s->middlebox)
+    {
+      off = matls_set_parameters(s->pair, p);
+      p += off;
+      l += off;
+      PRINTK("Put the prior parameters", pp, l);
+    }
+
+		/* Put the signature block */
+		memcpy(p, sigblk, sigblk_len);
+    p += sigblk_len;
+    l += sigblk_len;
+		PRINTK("Put the signature", pp, l);
+
+    /* Append the prior extended messges */
+    memcpy(p, s->extended_finished_msg, s->extended_finished_msg_len);
+    l += s->extended_finished_msg_len;
+
+		l2n3(l,d); 
+		s->init_num=(int)l+4; // total length including the message type
+		s->init_off=0;
+    s->state = SSL3_ST_SW_EXTENDED_FINISHED_B;
+	}
+
+	PRINTK("Extended Finished Message", d, l);
+
+	/* SSL3_ST_SEND_xxxxxx_HELLO_B */
+	return(ssl3_do_write(s,SSL3_RT_HANDSHAKE));
+}
+
+#endif /* OPENSSL_NO_MATLS */
+
 #ifndef OPENSSL_NO_NEXTPROTONEG
 /* ssl3_take_mac calculates the Finished MAC for the handshakes messages seen to far. */
 static void ssl3_take_mac(SSL *s)
@@ -231,6 +598,140 @@ static void ssl3_take_mac(SSL *s)
 	}
 #endif
 
+#ifndef OPENSSL_NO_MATLS
+#define MSG_LENGTH 48
+/**
+ * Find the pointer to the security block according to the identifier
+ */
+unsigned char *matls_get_block_from_id(SSL *s, unsigned char *ptr, int idx)
+{
+  // ret: pointer for the return, p: temorary pointer
+  // idp: pointer to the identifier in the id table. 
+  // idb: pointer to the identifier in the block.
+  unsigned char *ret, *p, *idp, *idb;
+  int i, nk, len;
+  
+  nk = s->mb_info->num_keys;
+  idp = s->mb_info->id_table[idx];
+
+  for (i=0; i<nk; i++)
+  {
+    n2s(ptr, len);
+    MA_LOG("Length of the block: %d", len);
+
+    idb = ptr;
+
+    if (!CRYPTO_memcmp(idp, idb, TLS_MD_ID_SIZE))
+    {
+      MA_LOG("Found the pointer");
+      return ptr - 2;
+    }
+    else
+    {
+      ptr += len;
+    }
+  }
+
+  MA_LOG("Cannot Found the pointer");
+  return NULL;
+}
+
+/**
+ * Process the extended finished message
+ */
+int matls_get_extended_finished(SSL *s)
+{
+	int ok, nk, i, hmlen, moff = 0, slen, rc, len;
+	long n;
+	unsigned char *p, *q, *sig, *parameters, *hmac = NULL;
+  unsigned char *init, *left, *right;
+  unsigned char msg[MSG_LENGTH];
+
+#ifdef OPENSSL_NO_NEXTPROTONEG
+	/* the mac has already been generated when we received the
+	 * change cipher spec message and is in s->s3->tmp.peer_finish_md.
+	 */ 
+#endif
+
+  MA_LOG("start the function");
+
+	n = s->method->ssl_get_message(s,
+		SSL3_ST_CR_EXTENDED_FINISHED_A,
+		SSL3_ST_CR_EXTENDED_FINISHED_B,
+		SSL3_MT_EXTENDED_FINISHED,
+		20000,
+		&ok);
+
+	if (!ok) return((int)n);
+
+  RECORD_LOG(s->time_log, MEASURE_1);
+	p = (unsigned char *)s->init_msg;
+
+  RECORD_LOG(s->time_log, MEASURE_2);
+  if (s->middlebox)
+  {
+    PRINTK("Simply Forward Extended Finished Message", p, n);
+    s->extended_finished_msg = (volatile unsigned char *)malloc(n);
+    memcpy(s->extended_finished_msg, p, n);
+    s->extended_finished_msg_len = n;
+  }
+  else // Endpoint (a server or a client)
+  {
+  RECORD_LOG(s->time_log, MEASURE_3);
+    PRINTK("Received Extended Finished Message", p, n);
+    q = p;
+    init = (unsigned char *)malloc(MATLS_P_LENGTH);
+
+    // Set the initial parameters (client's)
+    matls_set_parameters(s, init);
+
+    // Set the left pointer to the initial parameters
+    left = init;
+    parameters = (unsigned char *)malloc(2 * MATLS_P_LENGTH);
+
+    for (i=0; i<nk-1; i++)
+    {
+      p = matls_get_block_from_id(s, q, i);
+      n2s(p, len);
+      p += TLS_MD_ID_SIZE;
+
+      right = p;
+      p += MATLS_P_LENGTH;
+      memcpy(parameters, left, MATLS_P_LENGTH);
+      memcpy(parameters + MATLS_P_LENGTH, right, MATLS_P_LENGTH);
+
+      PRINTK("Before HMAC", parameters, 2 * MATLS_P_LENGTH);
+      PRINTK("Used Accountability Key", s->mb_info->accountability_keys[i], SSL_MAX_ACCOUNTABILITY_KEY_LENGTH);
+      hmac = HMAC(EVP_sha256(), s->mb_info->accountability_keys[i], SSL_MAX_ACCOUNTABILITY_KEY_LENGTH, msg, moff, NULL, &hmlen);
+      PRINTK("HMAC", hmac, hmlen);
+
+      memset(parameters, 0x0, 2 * MATLS_P_LENGTH);
+
+      slen = len - TLS_MD_ID_SIZE - MATLS_P_LENGTH;
+
+      rc = verification(hmac, MATLS_H_LENGTH, NID_sha256, slen, sig, s->mb_info->pkey[i]);
+      if (rc != 1)
+      {
+        printf("HMAC Verify Failed\n");
+        MA_LOG1d("Verify Failed", i);
+        exit(1);
+      }
+      sig += slen;
+      RECORD_LOG(s->time_log, MEASURE_10);
+
+      left = right;
+    }
+
+    free(parameters);
+    free(init);
+  }
+
+  MA_LOG("end of the function");
+	return 1;
+}
+
+#endif /* OPENSSL_NO_MATLS */
+
 int ssl3_get_finished(SSL *s, int a, int b)
 	{
 	int al,i,ok;
@@ -247,7 +748,7 @@ int ssl3_get_finished(SSL *s, int a, int b)
 		a,
 		b,
 		SSL3_MT_FINISHED,
-		64, /* should actually be 36+4 :-) */
+		20000, /* should actually be 36+4 :-) */
 		&ok);
 
 	if (!ok) return((int)n);
@@ -261,8 +762,8 @@ int ssl3_get_finished(SSL *s, int a, int b)
 		}
 	s->s3->change_cipher_spec=0;
 
-	p = (unsigned char *)s->init_msg;
-	i = s->s3->tmp.peer_finish_md_len;
+  p = (unsigned char *)s->init_msg;
+  i = s->s3->tmp.peer_finish_md_len;
 
 	if (i != n)
 		{
@@ -417,6 +918,227 @@ unsigned long ssl3_output_cert_chain(SSL *s, X509 *x)
 	return(l);
 	}
 
+#ifndef OPENSSL_NO_TTPA
+unsigned long ssl3_output_orig_cert_chain(SSL *s, X509 *x)
+{
+	s->orig_cert_buf = BUF_MEM_new();
+
+	int i;
+	unsigned long l=7;
+	BUF_MEM *buf;
+	int no_chain;
+	X509_STORE *chain_store;
+	chain_store = s->ctx->cert_store;
+
+	if ((s->mode & SSL_MODE_NO_AUTO_CHAIN) || s->ctx->extra_certs)
+		no_chain = 1;
+	else
+		no_chain = 0;
+
+	/* TLSv1 sends a chain with nothing in it, instead of an alert */
+	buf=s->orig_cert_buf;
+	if (!BUF_MEM_grow_clean(buf,10))
+	{
+		SSLerr(SSL_F_SSL3_OUTPUT_CERT_CHAIN,ERR_R_BUF_LIB);
+		return(0);
+	}
+	if (x != NULL)
+	{
+		if (no_chain)
+		{
+			if (ssl3_add_cert_to_buf(buf, &l, x))
+				return(0);
+		}
+		else
+		{
+			X509_STORE_CTX xs_ctx;
+
+			if (!X509_STORE_CTX_init(&xs_ctx,chain_store,x,NULL))
+			{
+				SSLerr(SSL_F_SSL3_OUTPUT_CERT_CHAIN,ERR_R_X509_LIB);
+				return(0);
+			}
+			X509_verify_cert(&xs_ctx);
+			/* Don't leave errors in the queue */
+			ERR_clear_error();
+			for (i=0; i < sk_X509_num(xs_ctx.chain); i++)
+			{
+				x = sk_X509_value(xs_ctx.chain, i);
+
+				if (ssl3_add_cert_to_buf(buf, &l, x))
+				{
+					X509_STORE_CTX_cleanup(&xs_ctx);
+					return 0;
+				}
+			}
+			X509_STORE_CTX_cleanup(&xs_ctx);
+		}
+	}
+	/* Thawte special :-) */
+	for (i=0; i<sk_X509_num(s->ctx->extra_certs); i++)
+	{
+		x=sk_X509_value(s->ctx->extra_certs,i);
+		if (ssl3_add_cert_to_buf(buf, &l, x))
+			return(0);
+	}
+
+	return(l);
+}
+#endif /* OPENSSL_NO_TTPA */
+
+#ifndef OPENSSL_NO_MATLS
+unsigned long matls_output_cert_chain(SSL *s, X509 *x)
+	{
+	unsigned char *p;
+	int i, nk = 0;
+	unsigned long l, init, len_pos, len;
+	BUF_MEM *buf;
+	int no_chain;
+
+  if (s->middlebox)
+  {
+    init = l = s->pair->cert_msg_len + 7;
+    len_pos = s->pair->cert_msg_len + 4;
+  }
+  else
+    l = 8;
+
+	if ((s->mode & SSL_MODE_NO_AUTO_CHAIN) || s->ctx->extra_certs)
+		no_chain = 1;
+	else
+		no_chain = 0;
+
+	/* TLSv1 sends a chain with nothing in it, instead of an alert */
+	buf=s->init_buf;
+
+  if (s->middlebox)
+  {
+    if (!BUF_MEM_grow_clean(buf, l))
+    {
+      SSLerr(SSL_F_SSL3_OUTPUT_CERT_CHAIN, ERR_R_BUF_LIB);
+      return 0;
+    }
+    p = &(buf->data[4]);
+    memcpy(p, s->pair->cert_msg, s->pair->cert_msg_len);
+#ifdef CERT_LOG
+    unsigned char *t;
+    int num_certs, k, tmp;
+    t = p;
+    num_certs = *(t++);
+    printf("[matls] %s:%s:%d: maximum length of buf: %ld\n", __FILE__, __func__, __LINE__, buf->max);
+    printf("[matls] %s:%s:%d: certificate message length to be copied: %d\n", __FILE__, __func__, __LINE__, s->pair->cert_msg_len);
+    printf("[matls] %s:%s:%d: # of Certs: %d\n", __FILE__, __func__, __LINE__, num_certs);
+    for (k=num_certs; k>1; k--)
+    {
+      n2l3(t, tmp);
+      t += tmp;
+      printf("[matls] %s:%s:%d: Length of Certs: %ld\n", __FILE__, __func__, __LINE__, tmp);
+    }
+    printf("\n");
+#endif /* CERT_LOG */
+  }
+  else
+  {
+	  if (!BUF_MEM_grow_clean(buf,10))
+		{
+		  SSLerr(SSL_F_SSL3_OUTPUT_CERT_CHAIN, ERR_R_BUF_LIB);
+		  return(0);
+		}
+  }
+
+	if (x != NULL)
+		{
+		if (no_chain)
+			{
+			  if (ssl3_add_cert_to_buf(buf, &l, x))
+				  return(0);
+			}
+		else
+			{
+			X509_STORE_CTX xs_ctx;
+
+			if (!X509_STORE_CTX_init(&xs_ctx,s->ctx->cert_store,x,NULL))
+				{
+				SSLerr(SSL_F_SSL3_OUTPUT_CERT_CHAIN,ERR_R_X509_LIB);
+				return(0);
+				}
+			X509_verify_cert(&xs_ctx);
+			/* Don't leave errors in the queue */
+			ERR_clear_error();
+			for (i=0; i < sk_X509_num(xs_ctx.chain); i++)
+				{
+				x = sk_X509_value(xs_ctx.chain, i);
+
+				if (ssl3_add_cert_to_buf(buf, &l, x))
+					{
+					X509_STORE_CTX_cleanup(&xs_ctx);
+					return 0;
+					}
+				}
+			X509_STORE_CTX_cleanup(&xs_ctx);
+			}
+		}
+	/* Thawte special :-) */
+	for (i=0; i<sk_X509_num(s->ctx->extra_certs); i++)
+		{
+		x=sk_X509_value(s->ctx->extra_certs,i);
+		if (ssl3_add_cert_to_buf(buf, &l, x))
+			return(0);
+		}
+
+	p = (unsigned char *)&(buf->data[4]);
+	if (s->middlebox)
+	{
+    	nk = *p;
+    	*(p++) = nk + 1;
+  }
+  else
+  {
+    *(p++) = 1;
+		l -= 8;
+		l2n3(l, p);
+		l += 4;
+  }
+
+	if (s->middlebox)
+	{
+		p = (unsigned char *)&(buf->data[len_pos]);
+  	len = l - init;
+  	l2n3(len, p);
+#if defined(DEBUG) || defined(CERT_LOG)
+    p = (unsigned char *)&(buf->data[4]);
+    printf("\n");
+    int cert_idx, num_certs, tlen;
+    num_certs = (*p++);
+    printf("[matls] %s:%s:%d: # of certs written: %d\n", __FILE__, __func__, __LINE__, num_certs);
+
+    for (cert_idx = num_certs; cert_idx > 0; cert_idx--)
+    {
+      n2l3(p, tlen);
+      p += tlen;
+      printf("[matls] %s:%s:%d: Length of Certs written: %d\n", __FILE__, __func__, __LINE__, tlen);
+    }
+
+    printf("[matls] %s:%s:%d: position to describe the length: %d\n", __FILE__, __func__, __LINE__, len_pos);
+  	printf("[matls] %s:%s:%d: length of the newly added certificate chain: %ld\n", __FILE__, __func__, __LINE__, len);
+#endif /* DEBUG */
+		l -= 4;
+	}
+
+	p = (unsigned char *)&(buf->data[0]);
+	*(p++) = SSL3_MT_CERTIFICATE;
+	l2n3(l,p);
+	l += 4;
+
+#ifdef CERT_LOG
+  printf("[matls] %s:%s:%d: total length of certificates: %ld\n", __FILE__, __func__, __LINE__, l);
+#endif /* CERT_LOG */
+
+	return(l);
+}
+
+#endif /* OPENSSL_NO_MATLS */
+
 /* Obtain handshake message of message type 'mt' (any if mt == -1),
  * maximum acceptable body length 'max'.
  * The first four bytes (msg_type and length) are read in state 'st1',
@@ -452,19 +1174,39 @@ long ssl3_get_message(SSL *s, int st1, int stn, int mt, long max, int *ok)
 
 		do
 			{
+
+      /*
+			/////
+      if (mt == SSL3_MT_EXTENDED_FINISHED)
+        printf("\n========== Start reading for SSL3_MT_EXTENDED_FINISHED Bottleneck ===========\n");
+			st = get_current_microseconds();
+			/////
+      */
 			while (s->init_num < 4)
-				{
-				i=s->method->ssl_read_bytes(s,SSL3_RT_HANDSHAKE,
+			{
+			  i=s->method->ssl_read_bytes(s,SSL3_RT_HANDSHAKE,
 					&p[s->init_num],4 - s->init_num, 0);
+
 				if (i <= 0)
-					{
+				{
 					s->rwstate=SSL_READING;
 					*ok = 0;
 					return i;
-					}
-				s->init_num+=i;
 				}
+				s->init_num+=i;
+			}
 			
+      /*
+			/////
+			et = get_current_microseconds();
+			if (mt == SSL3_MT_EXTENDED_FINISHED)
+			{
+				printf("time for read init_num: %lu us\n", et - st);
+        printf("========== End reading for SSL3_MT_EXTENDED_FINISHED Bottleneck ===========\n\n");
+			}
+			/////
+      */
+
 			skip_message = 0;
 			if (!s->server)
 				if (p[0] == SSL3_MT_HELLO_REQUEST)
@@ -506,6 +1248,13 @@ long ssl3_get_message(SSL *s, int st1, int stn, int mt, long max, int *ok)
 		s->s3->tmp.message_type= *(p++);
 
 		n2l3(p,l);
+    /*
+		//////
+		if (mt == SSL3_MT_EXTENDED_FINISHED)
+			printf("length: %lu\n", l);
+		/////
+    */
+
 		if (l > (unsigned long)max)
 			{
 			al=SSL_AD_ILLEGAL_PARAMETER;
@@ -533,6 +1282,13 @@ long ssl3_get_message(SSL *s, int st1, int stn, int mt, long max, int *ok)
 	/* next state (stn) */
 	p = s->init_msg;
 	n = s->s3->tmp.message_size - s->init_num;
+
+  /*
+	/////
+	st = get_current_microseconds();
+	/////
+  */
+
 	while (n > 0)
 		{
 		i=s->method->ssl_read_bytes(s,SSL3_RT_HANDSHAKE,&p[s->init_num],n,0);
@@ -546,6 +1302,14 @@ long ssl3_get_message(SSL *s, int st1, int stn, int mt, long max, int *ok)
 		n -= i;
 		}
 
+  /*
+	/////
+	et = get_current_microseconds();
+	if (mt == SSL3_MT_EXTENDED_FINISHED)
+		printf("time for read bytes: %lu\n", et - st);
+	/////
+  */
+
 #ifndef OPENSSL_NO_NEXTPROTONEG
 	/* If receiving Finished, record MAC of prior handshake messages for
 	 * Finished verification. */
@@ -554,7 +1318,20 @@ long ssl3_get_message(SSL *s, int st1, int stn, int mt, long max, int *ok)
 #endif
 
 	/* Feed this message into MAC computation. */
+  /*
+	/////
+	st = get_current_microseconds();
+	/////
+  */
 	ssl3_finish_mac(s, (unsigned char *)s->init_buf->data, s->init_num + 4);
+  /*
+	/////
+	et = get_current_microseconds();
+	if (mt == SSL3_MT_EXTENDED_FINISHED)
+		printf("time for ssl3_finish_mac: %lu\n", et - st);
+	/////
+  */
+
 	if (s->msg_callback)
 		s->msg_callback(0, s->version, SSL3_RT_HANDSHAKE, s->init_buf->data, (size_t)s->init_num + 4, s, s->msg_callback_arg);
 	*ok=1;

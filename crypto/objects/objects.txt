@@ -437,6 +437,7 @@ id-pkix 11		: id-qcs
 id-pkix 12		: id-cct
 id-pkix 21		: id-ppl
 id-pkix 48		: id-ad
+id-pkix 50    : id-md
 
 # PKIX Modules
 id-pkix-mod 1		: id-pkix1-explicit-88
@@ -471,6 +472,7 @@ id-pe 10		: ac-proxying
 !Cname sinfo-access
 id-pe 11		: subjectInfoAccess	: Subject Information Access
 id-pe 14		: proxyCertInfo		: Proxy Certificate Information
+id-pe 15    : middleboxInfo   : Middlebox Information
 
 # PKIX policyQualifiers for Internet policy qualifiers
 id-qt 1			: id-qt-cps		: Policy Qualifier CPS
@@ -604,6 +606,25 @@ id-ad 3			: ad_timestamping	: AD Time Stamping
 id-ad 4			: AD_DVCS		: ad dvcs
 id-ad 5			: caRepository		: CA Repository
 
+# middlebox descriptors for middlebox info extension
+!Cname md-url
+id-md 1     : url       : URL
+!Cname md-tos
+id-md 2     : tos       : Type of Service
+!Cname md-perm
+id-md 3     : perm      : Permission
+
+# middlebox type of service
+!Cname md-tos-waf
+md-tos 1    : waf       : Web Application Firewall
+!Cname md-tos-av
+md-tos 2    : av        : Anti-Virus Software
+
+# middlebox permission
+!Cname md-perm-read
+md-perm 1   : read      : Full Read Permission
+!Cname md-perm-write
+md-perm 2   : write     : Full Write Permission
 
 !Alias id-pkix-OCSP ad-OCSP
 !module id-pkix-OCSP

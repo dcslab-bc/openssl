@@ -117,6 +117,8 @@
 #include <openssl/rand.h>
 #include "ssl_locl.h"
 
+#include "logs.h"
+
 const char tls1_version_str[]="TLSv1" OPENSSL_VERSION_PTEXT;
 
 #ifndef OPENSSL_NO_TLSEXT
@@ -124,6 +126,9 @@ static int tls_decrypt_ticket(SSL *s, const unsigned char *tick, int ticklen,
 				const unsigned char *sess_id, int sesslen,
 				SSL_SESSION **psess);
 #endif
+
+#define CHECKLEN(curr, val, limit) \
+	(((curr) >= (limit)) || (size_t)((limit) - (curr)) < (size_t)(val))
 
 SSL3_ENC_METHOD TLSv1_enc_data={
 	tls1_enc,
@@ -424,6 +429,55 @@ unsigned char *ssl_add_clienthello_tlsext(SSL *s, unsigned char *buf, unsigned c
           ret += el;
         }
 
+#ifndef OPENSSL_NO_TTPA
+		if (s->ttpa_enabled)
+		{
+			int el;
+			if (!ssl_add_clienthello_ttpa_ext(s, 0, &el, 0))
+			{
+				SSLerr(SSL_F_SSL_ADD_CLIENTHELLO_TLSEXT, ERR_R_INTERNAL_ERROR);
+				return NULL;
+			}
+
+			if ((limit - ret - 4 - el) < 0) return NULL;
+
+			s2n(TLSEXT_TYPE_ttpa, ret);
+			s2n(el, ret);
+
+			if (!ssl_add_clienthello_ttpa_ext(s, ret, &el, el))
+			{
+				SSLerr(SSL_F_SSL_ADD_CLIENTHELLO_TLSEXT, ERR_R_INTERNAL_ERROR);
+				return NULL;
+			}
+
+			ret += el;
+		}
+#endif /* OPENSSL_NO_TTPA */
+
+#ifndef OPENSSL_NO_MATLS
+		if (s->mb_enabled)
+		{
+			int el;
+      unsigned char *tmp;
+
+			s2n(TLSEXT_TYPE_mb, ret);
+      tmp = ret + 2;
+
+			if (!ssl_add_clienthello_mb_ext(s, tmp, &el, el))
+			{
+				SSLerr(SSL_F_SSL_ADD_CLIENTHELLO_TLSEXT, ERR_R_INTERNAL_ERROR);
+				return NULL;
+			}
+
+			if ((limit - ret - 4 - el) < 0) return NULL;
+#ifdef DEBUG
+      printf("[matls] %s:%s:%d: Length of Client Hello Matls: %d\n", __FILE__, __func__, __LINE__, el);
+#endif /* DEBUG */
+      s2n(el, ret);
+			ret += el;
+		}
+#endif /* OPENSSL_NO_MATLS */
+
 #ifndef OPENSSL_NO_SRP
 	/* Add SRP username if there is one */
 	if (s->srp_ctx.login != NULL)
@@ -714,6 +768,70 @@ unsigned char *ssl_add_serverhello_tlsext(SSL *s, unsigned char *buf, unsigned c
 	
 	ret+=2;
 	if (ret>=limit) return NULL; /* this really never occurs, but ... */
+
+#ifndef OPENSSL_NO_TTPA
+	if (s->ttpa_enabled)
+	{
+		int el; // expected length
+
+		if (!ssl_add_serverhello_ttpa_ext(s, 0, &el, 0))
+		{
+			SSLerr(SSL_F_SSL_ADD_SERVERHELLO_TTPA_EXT, ERR_R_INTERNAL_ERROR);
+			return NULL;
+		}
+
+		if (CHECKLEN(ret, 4 + el, limit))
+			return NULL;
+
+		s2n(TLSEXT_TYPE_ttpa, ret);
+		s2n(el, ret);
+
+		if (!ssl_add_serverhello_ttpa_ext(s, ret, &el, el))
+		{
+			SSLerr(SSL_F_SSL_ADD_SERVERHELLO_TTPA_EXT, ERR_R_INTERNAL_ERROR);
+			return NULL;
+		}
+
+		ret += el;
+	}
+#endif /* OPENSSL_NO_TTPA */
+
+#ifndef OPENSSL_NO_MATLS
+	if (s->mb_enabled && s->matls_received)
+	{
+#ifdef MB_DEBUG
+		printf("[MB] Add TLS extension for middlebox start\n");
+#endif
+		int el;
+    unsigned char *tmp;
+
+		//if (!ssl_add_serverhello_mb_ext(s, 0, &el, 0))
+		//{
+		//	SSLerr(SSL_F_SSL_ADD_SERVERHELLO_MB_EXT, ERR_R_INTERNAL_ERROR);
+		//	return NULL;
+		//}
+
+		//if (CHECKLEN(ret, 4 + el, limit))
+		//	return NULL;
+		
+		s2n(TLSEXT_TYPE_mb, ret);
+    tmp = ret + 2;
+		//s2n(el, ret);
+
+		if (!ssl_add_serverhello_mb_ext(s, tmp, &el, el))
+		{
+			SSLerr(SSL_F_SSL_ADD_SERVERHELLO_MB_EXT, ERR_R_INTERNAL_ERROR);
+			return NULL;
+		}
+
+    if ((limit - ret - 4 - el) < 0) return NULL;
+    s2n(el, ret);
+		ret += el;
+#ifdef MB_DEBUG
+		printf("[MB] Add TLS extension for middlebox complete\n");
+#endif
+	}
+#endif /* OPENSSL_NO_MATLS */
 
 	if (!s->hit && s->servername_done == 1 && s->session->tlsext_hostname != NULL)
 		{ 
@@ -1095,6 +1213,21 @@ int ssl_parse_clienthello_tlsext(SSL *s, unsigned char **p, unsigned char *d, in
 							}
 						memcpy(s->session->tlsext_hostname, sdata, len);
 						s->session->tlsext_hostname[len]='\0';
+#ifndef OPENSSL_NO_SPLIT_TLS
+                        if (s->sni_callback)
+                        {
+#ifdef DEBUG
+                          printf("[matls] %s:%s:%d: server name indicator call back\n", __FILE__, __func__, __LINE__);
+#endif /* DEBUG */
+                          s->sni_callback(s->session->tlsext_hostname, len, s);
+                        }
+                        else
+                        {
+#ifdef DEBUG
+                          printf("[matls] %s:%s:%d: no server name indicator call back\n", __FILE__, __func__, __LINE__);
+#endif /* DEBUG */
+                        }
+#endif /* OPENSSL_NO_SPLIT_TLS */
 						if (strlen(s->session->tlsext_hostname) != len) {
 							OPENSSL_free(s->session->tlsext_hostname);
 							s->session->tlsext_hostname = NULL;
@@ -1268,6 +1401,25 @@ int ssl_parse_clienthello_tlsext(SSL *s, unsigned char **p, unsigned char *d, in
 				return 0;
 			renegotiate_seen = 1;
 			}
+#ifndef OPENSSL_NO_TTPA
+		else if (type == TLSEXT_TYPE_ttpa)
+		{
+			if(!ssl_parse_clienthello_ttpa_ext(s, data, size, al))
+				return 0;
+		}
+#endif /* OPENSSL_NO_TTPE */
+#ifndef OPENSSL_NO_MATLS
+		else if (type == TLSEXT_TYPE_mb)
+		{
+      //RECORD_LOG(time_log, SERVER_PARSE_CLIENT_TLSEXT_START);
+      s->matls_received = 1;
+      if (s->mb_enabled)
+  		  if(!ssl_parse_clienthello_mb_ext(s, data, size, al))
+	  		  return 0;
+      //RECORD_LOG(time_log, SERVER_PARSE_CLIENT_TLSEXT_END);
+      //INTERVAL(time_log, SERVER_PARSE_CLIENT_TLSEXT_START, SERVER_PARSE_CLIENT_TLSEXT_END);
+		}
+#endif /* OPENSSL_NO_MATLS */
 		else if (type == TLSEXT_TYPE_signature_algorithms)
 			{
 			int dsize;
@@ -1681,6 +1833,28 @@ int ssl_parse_serverhello_tlsext(SSL *s, unsigned char **p, unsigned char *d, in
 				return 0;
 			renegotiate_seen = 1;
 			}
+#ifndef OPENSSL_NO_TTPA
+		else if (type == TLSEXT_TYPE_ttpa)
+		{
+			if(!ssl_parse_serverhello_ttpa_ext(s, data, size, al))
+				return 0;
+		}
+#endif /* OPENSSL_NO_TTPA */
+#ifndef OPENSSL_NO_MATLS
+		else if (type == TLSEXT_TYPE_mb)
+		{
+#ifdef TIME_LOG
+		printf("[TT] %s:%s:%d: Before parse server hello mb\n", __FILE__, __func__, __LINE__);
+		unsigned long time1 = get_current_microseconds();
+#endif /* TIME_LOG */
+  		if(!ssl_parse_serverhello_mb_ext(s, data, size, al))
+	  		return 0;
+#ifdef TIME_LOG
+		unsigned long time2 = get_current_microseconds();
+		printf("[TT] %s:%s:%d: After parse server hello mb: %lu us\n", __FILE__, __func__, __LINE__, time2 - time1);
+#endif /* TIME_LOG */
+		}
+#endif /* OPENSSL_NO_MATLS */
 #ifndef OPENSSL_NO_HEARTBEATS
 		else if (type == TLSEXT_TYPE_heartbeat)
 			{

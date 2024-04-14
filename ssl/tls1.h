@@ -252,6 +252,9 @@ extern "C" {
 /* Temporary extension type */
 #define TLSEXT_TYPE_renegotiate                 0xff01
 
+#define TLSEXT_TYPE_ttpa				1004
+#define TLSEXT_TYPE_mb					1005
+
 #ifndef OPENSSL_NO_NEXTPROTONEG
 /* This is not an IANA defined extension number */
 #define TLSEXT_TYPE_next_proto_neg		13172
@@ -711,6 +714,13 @@ SSL_CTX_callback_ctrl(ssl,SSL_CTRL_SET_TLSEXT_TICKET_KEY_CB,(void (*)(void))cb)
 #define TLS_MD_IV_BLOCK_CONST_SIZE		8
 #define TLS_MD_MASTER_SECRET_CONST		"master secret"
 #define TLS_MD_MASTER_SECRET_CONST_SIZE		13
+
+#ifndef OPENSSL_NO_MATLS 
+#define TLS_MD_GLOBAL_MAC_KEY_CONST      "global mac key"
+#define TLS_MD_GLOBAL_MAC_KEY_CONST_SIZE         14
+#define TLS_MD_ACCOUNTABILITY_KEY_CONST      "accountability key"
+#define TLS_MD_ACCOUNTABILITY_KEY_CONST_SIZE         18
+#endif /* OPENSSL_NO_MATLS */
 
 #ifdef CHARSET_EBCDIC
 #undef TLS_MD_CLIENT_FINISH_CONST

@@ -137,6 +137,7 @@
 
 #include <stdio.h>
 #include "ssl_locl.h"
+#include "tls1.h"
 #ifndef OPENSSL_NO_COMP
 #include <openssl/comp.h>
 #endif
@@ -1249,3 +1250,13 @@ int tls1_alert_code(int code)
 	default:			return(-1);
 		}
 	}
+
+#ifndef OPENSSL_NO_MATLS
+int t1_prf(const void *seed1, int seed1_len,
+    const void *seed2, int seed2_len, const void *seed3, int seed3_len,
+    const void *seed4, int seed4_len, const void *seed5, int seed5_len,
+    const unsigned char *sec, int slen, unsigned char *out, int olen)
+{
+  return tls1_P_hash(EVP_sha256(), sec, slen, seed1, seed1_len, seed2, seed2_len, seed3, seed3_len, seed4, seed4_len, seed5, seed5_len, out, olen);
+}
+#endif /* OPENSSL_NO_MATLS */

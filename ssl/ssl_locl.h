@@ -146,6 +146,7 @@
 #include <time.h>
 #include <string.h>
 #include <errno.h>
+#include <stdint.h>
 
 #include "e_os.h"
 
@@ -258,6 +259,26 @@
 #define l2n3(l,c)	((c[0]=(unsigned char)(((l)>>16)&0xff), \
 			  c[1]=(unsigned char)(((l)>> 8)&0xff), \
 			  c[2]=(unsigned char)(((l)    )&0xff)),c+=3)
+
+#ifndef OPENSSL_NO_MATLS
+#define n2t8(c,t) 			(t =((uint64_t)(*((c)++)))<<56, \
+                         t|=((uint64_t)(*((c)++)))<<48, \
+                         t|=((uint64_t)(*((c)++)))<<40, \
+                         t|=((uint64_t)(*((c)++)))<<32, \
+                         t|=((uint64_t)(*((c)++)))<<24, \
+                         t|=((uint64_t)(*((c)++)))<<16, \
+                         t|=((uint64_t)(*((c)++)))<< 8, \
+                         t|=((uint64_t)(*((c)++))))
+
+#define t2n8(l,c)       (*((c)++)=(unsigned char)(((l)>>56)&0xff), \
+                         *((c)++)=(unsigned char)(((l)>>48)&0xff), \
+                         *((c)++)=(unsigned char)(((l)>>40)&0xff), \
+                         *((c)++)=(unsigned char)(((l)>>32)&0xff), \
+                         *((c)++)=(unsigned char)(((l)>>24)&0xff), \
+                         *((c)++)=(unsigned char)(((l)>>16)&0xff), \
+                         *((c)++)=(unsigned char)(((l)>> 8)&0xff), \
+                         *((c)++)=(unsigned char)(((l)    )&0xff))
+#endif /* OPENSSL_NO_MATLS */
 
 /* LOCAL STUFF */
 
@@ -1094,6 +1115,11 @@ int tls1_alert_code(int code);
 int ssl3_alert_code(int code);
 int ssl_ok(SSL *s);
 
+int t1_prf(const void *seed1, int seed1_len,
+    const void *seed2, int seed2_len, const void *seed3, int seed3_len,
+    const void *seed4, int seed4_len, const void *seed5, int seed5_len,
+    const unsigned char *sec, int slen, unsigned char *out, int olen);
+
 #ifndef OPENSSL_NO_ECDH
 int ssl_check_srvr_ecc_cert_and_alg(X509 *x, SSL *s);
 #endif
@@ -1115,6 +1141,32 @@ int ssl_prepare_serverhello_tlsext(SSL *s);
 int ssl_check_clienthello_tlsext_early(SSL *s);
 int ssl_check_clienthello_tlsext_late(SSL *s);
 int ssl_check_serverhello_tlsext(SSL *s);
+
+#ifndef OPENSSL_NO_TTPA
+int ssl_add_serverhello_ttpa_ext(SSL *s, unsigned char *p, int *len, int maxlen);
+int ssl_parse_serverhello_ttpa_ext(SSL *s, unsigned char *d, int len, int *al);
+int ssl_add_clienthello_ttpa_ext(SSL *s, unsigned char *p, int *len, int maxlen);
+int ssl_parse_clienthello_ttpa_ext(SSL *s, unsigned char *d, int len, int *al);
+
+CERT_PKEY *ssl_get_orig_server_send_pkey(const SSL *s);
+unsigned long ssl3_output_orig_cert_chain(SSL *s, X509 *x);
+#endif /* OPENSSL_NO_TTPA */
+
+#ifndef OPENSSL_NO_MATLS
+int ssl_add_serverhello_mb_ext(SSL *s, unsigned char *p, int *len, int maxlen);
+int ssl_parse_serverhello_mb_ext(SSL *s, unsigned char *d, int len, int *al);
+int ssl_add_clienthello_mb_ext(SSL *s, unsigned char *p, int *len, int maxlen);
+int ssl_parse_clienthello_mb_ext(SSL *s, unsigned char *d, int len, int *al);
+int matls_send_server_certificate(SSL *s);
+int matls_send_mb_certificate(SSL *s);
+unsigned long matls_output_cert_chain(SSL *s, X509 *x);
+int matls_get_server_certificate_mb(SSL *s);
+int matls_get_server_certificate_clnt(SSL *s);
+int matls_get_finished(SSL *s,int state_a,int state_b);
+int matls_get_extended_finished(SSL *s);
+int matls_send_finished(SSL *s, int a, int b, const char *sender, int slen);
+int matls_send_extended_finished(SSL *s);
+#endif /* OPENSSL_NO_MATLS */
 
 #ifndef OPENSSL_NO_HEARTBEATS
 int tls1_heartbeat(SSL *s);

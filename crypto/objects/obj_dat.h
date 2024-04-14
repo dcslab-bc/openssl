@@ -62,12 +62,12 @@
  * [including the GNU Public Licence.]
  */
 
-#define NUM_NID 920
-#define NUM_SN 913
-#define NUM_LN 913
-#define NUM_OBJ 857
+#define NUM_NID 929
+#define NUM_SN 922
+#define NUM_LN 922
+#define NUM_OBJ 866
 
-static const unsigned char lvalues[5974]={
+static const unsigned char lvalues[6049]={
 0x2A,0x86,0x48,0x86,0xF7,0x0D,               /* [  0] OBJ_rsadsi */
 0x2A,0x86,0x48,0x86,0xF7,0x0D,0x01,          /* [  6] OBJ_pkcs */
 0x2A,0x86,0x48,0x86,0xF7,0x0D,0x02,0x02,     /* [ 13] OBJ_md2 */
@@ -919,6 +919,15 @@ static const unsigned char lvalues[5974]={
 0x2A,0x86,0x48,0x86,0xF7,0x0D,0x01,0x01,0x08,/* [5946] OBJ_mgf1 */
 0x2A,0x86,0x48,0x86,0xF7,0x0D,0x01,0x01,0x0A,/* [5955] OBJ_rsassaPss */
 0x2A,0x86,0x48,0x86,0xF7,0x0D,0x01,0x01,0x07,/* [5964] OBJ_rsaesOaep */
+0x2B,0x06,0x01,0x05,0x05,0x07,0x01,0x0F,     /* [5973] OBJ_middleboxInfo */
+0x2B,0x06,0x01,0x05,0x05,0x07,0x32,          /* [5981] OBJ_id_md */
+0x2B,0x06,0x01,0x05,0x05,0x07,0x32,0x01,     /* [5988] OBJ_md_url */
+0x2B,0x06,0x01,0x05,0x05,0x07,0x32,0x02,     /* [5996] OBJ_md_tos */
+0x2B,0x06,0x01,0x05,0x05,0x07,0x32,0x03,     /* [6004] OBJ_md_perm */
+0x2B,0x06,0x01,0x05,0x05,0x07,0x32,0x02,0x01,/* [6012] OBJ_tos_waf */
+0x2B,0x06,0x01,0x05,0x05,0x07,0x32,0x02,0x02,/* [6021] OBJ_tos_av */
+0x2B,0x06,0x01,0x05,0x05,0x07,0x32,0x03,0x01,/* [6030] OBJ_perm_read */
+0x2B,0x06,0x01,0x05,0x05,0x07,0x32,0x03,0x02,/* [6039] OBJ_perm_write */
 };
 
 static const ASN1_OBJECT nid_objs[NUM_NID]={
@@ -2399,6 +2408,16 @@ static const ASN1_OBJECT nid_objs[NUM_NID]={
 {"AES-256-CBC-HMAC-SHA1","aes-256-cbc-hmac-sha1",
 	NID_aes_256_cbc_hmac_sha1,0,NULL,0},
 {"RSAES-OAEP","rsaesOaep",NID_rsaesOaep,9,&(lvalues[5964]),0},
+{"middleboxInfo","Middlebox Information",NID_middleboxInfo,8,
+	&(lvalues[5973]),0},
+{"id-md","id-md",NID_id_md,7,&(lvalues[5981]),0},
+{"url","URL",NID_md_url,8,&(lvalues[5988]),0},
+{"tos","Type of Service",NID_md_tos,8,&(lvalues[5996]),0},
+{"perm","Permission",NID_md_perm,8,&(lvalues[6004]),0},
+{"waf","Web Application Firewall",NID_tos_waf,9,&(lvalues[6012]),0},
+{"av","Anti-Virus Software",NID_tos_av,9,&(lvalues[6021]),0},
+{"read","Full Read Permission",NID_perm_read,9,&(lvalues[6030]),0},
+{"write","Full Write Permission",NID_perm_write,9,&(lvalues[6039]),0},
 };
 
 static const unsigned int sn_objs[NUM_SN]={
@@ -2610,6 +2629,7 @@ static const unsigned int sn_objs[NUM_SN]={
 177,	/* "authorityInfoAccess" */
 90,	/* "authorityKeyIdentifier" */
 882,	/* "authorityRevocationList" */
+926,	/* "av" */
 87,	/* "basicConstraints" */
 365,	/* "basicOCSPResponse" */
 285,	/* "biometricInfo" */
@@ -2848,6 +2868,7 @@ static const unsigned int sn_objs[NUM_SN]={
 784,	/* "id-it-suppLangTags" */
 304,	/* "id-it-unsupportedOIDs" */
 128,	/* "id-kp" */
+921,	/* "id-md" */
 280,	/* "id-mod-attribute-cert" */
 274,	/* "id-mod-cmc" */
 277,	/* "id-mod-cmp" */
@@ -2992,6 +3013,7 @@ static const unsigned int sn_objs[NUM_SN]={
 182,	/* "member-body" */
 51,	/* "messageDigest" */
 383,	/* "mgmt" */
+920,	/* "middleboxInfo" */
 504,	/* "mime-mhs" */
 506,	/* "mime-mhs-bodies" */
 505,	/* "mime-mhs-headings" */
@@ -3028,6 +3050,7 @@ static const unsigned int sn_objs[NUM_SN]={
 489,	/* "pagerTelephoneNumber" */
 374,	/* "path" */
 112,	/* "pbeWithMD5AndCast5CBC" */
+924,	/* "perm" */
 499,	/* "personalSignature" */
 487,	/* "personalTitle" */
 464,	/* "photo" */
@@ -3081,6 +3104,7 @@ static const unsigned int sn_objs[NUM_SN]={
 286,	/* "qcStatements" */
 457,	/* "qualityLabelledData" */
 450,	/* "rFC822localPart" */
+927,	/* "read" */
 870,	/* "registeredAddress" */
 400,	/* "role" */
 877,	/* "roleOccupant" */
@@ -3287,16 +3311,19 @@ static const unsigned int sn_objs[NUM_SN]={
 293,	/* "textNotice" */
 133,	/* "timeStamping" */
 106,	/* "title" */
+923,	/* "tos" */
 682,	/* "tpBasis" */
 375,	/* "trustRoot" */
 436,	/* "ucl" */
 888,	/* "uniqueMember" */
 55,	/* "unstructuredAddress" */
 49,	/* "unstructuredName" */
+922,	/* "url" */
 880,	/* "userCertificate" */
 465,	/* "userClass" */
 879,	/* "userPassword" */
 373,	/* "valid" */
+925,	/* "waf" */
 678,	/* "wap" */
 679,	/* "wap-wsg" */
 735,	/* "wap-wsg-idm-ecid-wtls1" */
@@ -3311,6 +3338,7 @@ static const unsigned int sn_objs[NUM_SN]={
 741,	/* "wap-wsg-idm-ecid-wtls8" */
 742,	/* "wap-wsg-idm-ecid-wtls9" */
 804,	/* "whirlpool" */
+928,	/* "write" */
 868,	/* "x121Address" */
 503,	/* "x500UniqueIdentifier" */
 158,	/* "x509Certificate" */
@@ -3321,6 +3349,7 @@ static const unsigned int ln_objs[NUM_LN]={
 363,	/* "AD Time Stamping" */
 405,	/* "ANSI X9.62" */
 368,	/* "Acceptable OCSP Responses" */
+926,	/* "Anti-Virus Software" */
 910,	/* "Any Extended Key Usage" */
 664,	/* "Any language" */
 177,	/* "Authority Information Access" */
@@ -3337,6 +3366,8 @@ static const unsigned int ln_objs[NUM_LN]={
 384,	/* "Experimental" */
 372,	/* "Extended OCSP Status" */
 172,	/* "Extension Request" */
+927,	/* "Full Read Permission" */
+928,	/* "Full Write Permission" */
 813,	/* "GOST 28147-89" */
 849,	/* "GOST 28147-89 Cryptocom ParamSet" */
 815,	/* "GOST 28147-89 MAC" */
@@ -3381,6 +3412,7 @@ static const unsigned int ln_objs[NUM_LN]={
 648,	/* "Microsoft Smartcardlogin" */
 136,	/* "Microsoft Trust List Signing" */
 649,	/* "Microsoft Universal Principal Name" */
+920,	/* "Middlebox Information" */
 393,	/* "NULL" */
 404,	/* "NULL" */
 72,	/* "Netscape Base Url" */
@@ -3408,6 +3440,7 @@ static const unsigned int ln_objs[NUM_LN]={
 162,	/* "PBMAC1" */
 127,	/* "PKIX" */
 858,	/* "Permanent Identifier" */
+924,	/* "Permission" */
 164,	/* "Policy Qualifier CPS" */
 165,	/* "Policy Qualifier User Notice" */
 385,	/* "Private" */
@@ -3426,6 +3459,9 @@ static const unsigned int ln_objs[NUM_LN]={
 129,	/* "TLS Web Server Authentication" */
 133,	/* "Time Stamping" */
 375,	/* "Trust Root" */
+923,	/* "Type of Service" */
+922,	/* "URL" */
+925,	/* "Web Application Firewall" */
 12,	/* "X509" */
 402,	/* "X509v3 AC Targeting" */
 746,	/* "X509v3 Any Policy" */
@@ -3756,6 +3792,7 @@ static const unsigned int ln_objs[NUM_LN]={
 784,	/* "id-it-suppLangTags" */
 304,	/* "id-it-unsupportedOIDs" */
 128,	/* "id-kp" */
+921,	/* "id-md" */
 280,	/* "id-mod-attribute-cert" */
 274,	/* "id-mod-cmc" */
 277,	/* "id-mod-cmp" */
@@ -4623,6 +4660,7 @@ static const unsigned int obj_objs[NUM_OBJ]={
 268,	/* OBJ_id_cct                       1 3 6 1 5 5 7 12 */
 662,	/* OBJ_id_ppl                       1 3 6 1 5 5 7 21 */
 176,	/* OBJ_id_ad                        1 3 6 1 5 5 7 48 */
+921,	/* OBJ_id_md                        1 3 6 1 5 5 7 50 */
 507,	/* OBJ_id_hex_partial_message       1 3 6 1 7 1 1 1 */
 508,	/* OBJ_id_hex_multipart_message     1 3 6 1 7 1 1 2 */
 57,	/* OBJ_netscape                     2 16 840 1 113730 */
@@ -4725,6 +4763,7 @@ static const unsigned int obj_objs[NUM_OBJ]={
 397,	/* OBJ_ac_proxying                  1 3 6 1 5 5 7 1 10 */
 398,	/* OBJ_sinfo_access                 1 3 6 1 5 5 7 1 11 */
 663,	/* OBJ_proxyCertInfo                1 3 6 1 5 5 7 1 14 */
+920,	/* OBJ_middleboxInfo                1 3 6 1 5 5 7 1 15 */
 164,	/* OBJ_id_qt_cps                    1 3 6 1 5 5 7 2 1 */
 165,	/* OBJ_id_qt_unotice                1 3 6 1 5 5 7 2 2 */
 293,	/* OBJ_textNotice                   1 3 6 1 5 5 7 2 3 */
@@ -4805,6 +4844,9 @@ static const unsigned int obj_objs[NUM_OBJ]={
 363,	/* OBJ_ad_timeStamping              1 3 6 1 5 5 7 48 3 */
 364,	/* OBJ_ad_dvcs                      1 3 6 1 5 5 7 48 4 */
 785,	/* OBJ_caRepository                 1 3 6 1 5 5 7 48 5 */
+922,	/* OBJ_md_url                       1 3 6 1 5 5 7 50 1 */
+923,	/* OBJ_md_tos                       1 3 6 1 5 5 7 50 2 */
+924,	/* OBJ_md_perm                      1 3 6 1 5 5 7 50 3 */
 780,	/* OBJ_hmac_md5                     1 3 6 1 5 5 8 1 1 */
 781,	/* OBJ_hmac_sha1                    1 3 6 1 5 5 8 1 2 */
 58,	/* OBJ_netscape_cert_extension      2 16 840 1 113730 1 */
@@ -4886,6 +4928,10 @@ static const unsigned int obj_objs[NUM_OBJ]={
 373,	/* OBJ_id_pkix_OCSP_valid           1 3 6 1 5 5 7 48 1 9 */
 374,	/* OBJ_id_pkix_OCSP_path            1 3 6 1 5 5 7 48 1 10 */
 375,	/* OBJ_id_pkix_OCSP_trustRoot       1 3 6 1 5 5 7 48 1 11 */
+925,	/* OBJ_tos_waf                      1 3 6 1 5 5 7 50 2 1 */
+926,	/* OBJ_tos_av                       1 3 6 1 5 5 7 50 2 2 */
+927,	/* OBJ_perm_read                    1 3 6 1 5 5 7 50 3 1 */
+928,	/* OBJ_perm_write                   1 3 6 1 5 5 7 50 3 2 */
 418,	/* OBJ_aes_128_ecb                  2 16 840 1 101 3 4 1 1 */
 419,	/* OBJ_aes_128_cbc                  2 16 840 1 101 3 4 1 2 */
 420,	/* OBJ_aes_128_ofb128               2 16 840 1 101 3 4 1 3 */

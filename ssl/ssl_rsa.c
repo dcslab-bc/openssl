@@ -64,6 +64,8 @@
 #include <openssl/x509.h>
 #include <openssl/pem.h>
 
+#include "logs.h"
+
 static int ssl_set_cert(CERT *c, X509 *x509);
 static int ssl_set_pkey(CERT *c, EVP_PKEY *pkey);
 int SSL_use_certificate(SSL *ssl, X509 *x)
@@ -123,6 +125,10 @@ int SSL_use_certificate_file(SSL *ssl, const char *file, int type)
 		goto end;
 		}
 
+#ifndef OPENSSL_NO_MATLS
+  ssl->x509 = x;
+#endif /* OPENSSL_NO_MATLS */
+
 	ret=SSL_use_certificate(ssl,x);
 end:
 	if (x != NULL) X509_free(x);
@@ -178,6 +184,428 @@ int SSL_use_RSAPrivateKey(SSL *ssl, RSA *rsa)
 	return(ret);
 	}
 #endif
+
+#ifndef OPENSSL_NO_TTPA
+int SSL_use_orig_certificate(SSL *ssl, X509 *x)
+{
+	if (x == NULL)
+	{
+		SSLerr(SSL_F_SSL_USE_CERTIFICATE, ERR_R_PASSED_NULL_PARAMETER);
+		return 0;
+	}
+
+	if (!ssl_cert_inst(&ssl->orig_cert))
+	{
+		SSLerr(SSL_F_SSL_USE_CERTIFICATE, ERR_R_MALLOC_FAILURE);
+		return 0;
+	}
+
+	return ssl_set_cert(ssl->orig_cert, x);
+}
+
+int SSL_use_orig_certificate_file(SSL *ssl, const char *file, int type)
+{
+	int j;
+	BIO *in;
+	int ret = 0;
+	X509 *x = NULL;
+
+	in = BIO_new(BIO_s_file());
+	if (in == NULL)
+	{
+		SSLerr(SSL_F_SSL_USE_CERTIFICATE_FILE, ERR_R_BUF_LIB);
+		goto end;
+	}
+
+	if (BIO_read_filename(in, file) <= 0)
+	{
+		SSLerr(SSL_F_SSL_USE_CERTIFICATE_FILE, ERR_R_SYS_LIB);
+		goto end;
+	}
+
+	if (type == SSL_FILETYPE_ASN1)
+	{
+		j = ERR_R_ASN1_LIB;
+		x = d2i_X509_bio(in, NULL);
+	}
+	else if (type == SSL_FILETYPE_PEM)
+	{
+		j = ERR_R_PEM_LIB;
+		x = PEM_read_bio_X509(in, NULL, ssl->ctx->default_passwd_callback,
+							ssl->ctx->default_passwd_callback_userdata);
+	}
+	else
+	{
+		SSLerr(SSL_F_SSL_USE_CERTIFICATE_FILE, SSL_R_BAD_SSL_FILETYPE);
+		goto end;
+	}
+
+	if (x == NULL)
+	{
+		SSLerr(SSL_F_SSL_USE_CERTIFICATE_FILE, j);
+		goto end;
+	}
+
+	ret = SSL_use_orig_certificate(ssl, x);
+end:
+	X509_free(x);
+	BIO_free(in);
+	return ret;
+}
+
+int SSL_use_cc_file(SSL *s, const char *cc)
+{
+	int offset = 0;
+	BIO *in;
+	unsigned char *tmp;
+
+	in = BIO_new(BIO_s_file());
+
+///// TODO: use the file length for the below tmp /////
+	tmp = OPENSSL_malloc(1500);
+///////////////////////////////////////////////////////
+
+	if (in == NULL)
+	{
+		SSLerr(SSL_F_SSL_USE_CC_FILE, ERR_R_BUF_LIB);
+		goto end;
+	}
+
+	while (!BIO_eof(in))
+		offset += BIO_read(in, tmp + offset, 1500);
+
+	s->cc_len = offset - 1;
+	s->cc = OPENSSL_malloc(s->cc_len);
+
+end:
+	BIO_free(in);
+	OPENSSL_free(tmp);
+	return 1;
+}
+
+int SSL_CTX_use_orig_certificate(SSL_CTX *ctx, X509 *x)
+{
+    if (x == NULL) {
+        SSLerr(SSL_F_SSL_CTX_USE_ORIG_CERTIFICATE, ERR_R_PASSED_NULL_PARAMETER);
+        return (0);
+    }
+
+    if (!ssl_cert_inst(&ctx->orig_cert)) {
+        SSLerr(SSL_F_SSL_CTX_USE_ORIG_CERTIFICATE, ERR_R_MALLOC_FAILURE);
+        return 0;
+    }
+    return (ssl_set_cert(ctx->orig_cert, x));
+}
+
+int SSL_CTX_use_cc_file(SSL_CTX *ctx, const char *file)
+{
+#ifdef TTPA_DEBUG
+    printf("in SSL_CTX_use_warrant_file\n");
+#endif
+    int offset = 0;
+    BIO *in;
+///// TODO: It can be malloced using the file size. /////
+    unsigned char tmp[1024];
+/////////////////////////////////////////////////////////
+
+    in = BIO_new(BIO_s_file());
+    printf("BIO_new success\n");
+    printf("OPENSSL_zalloc success\n");
+
+    if (in == NULL) {
+        SSLerr(SSL_F_SSL_CTX_USE_CC_FILE, ERR_R_BUF_LIB);
+        goto end;
+    }
+
+    if (BIO_read_filename(in, file) <= 0) {
+        SSLerr(SSL_F_SSL_CTX_USE_CC_FILE, ERR_R_SYS_LIB);
+        goto end;
+    }
+
+    printf("BIO_read_filename success\n");
+
+    offset = BIO_read(in, tmp, 1024);
+
+    ctx->cc_len = offset;
+    printf("ctx->warrant_len: %d\n", ctx->cc_len);
+    ctx->cc = OPENSSL_malloc(ctx->cc_len);
+    printf("ctx->warrant set\n");
+    memcpy(ctx->cc, tmp, ctx->cc_len);
+    printf("ctx->warrant set success\n");
+
+ end:
+    BIO_free(in);
+    return 1;
+}
+
+int SSL_CTX_confirm_load(SSL_CTX *ctx)
+{
+    X509 *x;
+    X509 *y;
+    char *line;
+
+    int i = 0;
+
+    for (i=0; i<9; i++)
+    {
+        x = ctx->cert->pkeys[0].x509;
+        if (x != NULL)
+            break;
+    }
+
+    if (x == NULL)
+    {
+        printf("Error in loading the edge's certificate\n");
+        return 0;
+    }
+
+    for (i=0; i<9; i++)
+    {
+        y = ctx->orig_cert->pkeys[0].x509;
+        if (y != NULL)
+            break;
+    }
+
+    if (y == NULL)
+    {
+        printf("Error in loading the origin's certificate\n");
+        return 0;
+    }
+
+    printf("Origin Certificte ===\n");
+    line = X509_NAME_oneline(X509_get_subject_name(y), 0, 0);
+    printf("Subject: %s\n", line);
+    free(line);
+    printf("\nEdge Certificate ===\n");
+    line = X509_NAME_oneline(X509_get_subject_name(x), 0, 0);
+    printf("Subject: %s\n", line);
+    free(line);
+    printf("\nWarrant ===\n");
+    printf("warrant_len: %d\n", ctx->cc_len);
+
+    return 1;
+}
+
+int SSL_CTX_use_orig_certificate_file(SSL_CTX *ctx, const char *file, int type)
+{
+    int j;
+    BIO *in;
+    int ret = 0;
+    X509 *x = NULL;
+
+    if (strstr(file, "ecc") != NULL) {
+        printf("Origin Certificate is a ECC certificate\n");
+        ctx->orig_cert_type = SSL_PKEY_ECC;
+    }
+
+    if (strstr(file, "rsa") != NULL) {
+        printf("Origin Certificate is a RSA certificate\n");
+        ctx->orig_cert_type = SSL_PKEY_RSA_ENC;
+    }
+
+    in = BIO_new(BIO_s_file());
+    if (in == NULL) {
+        SSLerr(SSL_F_SSL_CTX_USE_ORIG_CERTIFICATE_FILE, ERR_R_BUF_LIB);
+        goto end;
+    }
+
+    if (BIO_read_filename(in, file) <= 0) {
+        SSLerr(SSL_F_SSL_CTX_USE_ORIG_CERTIFICATE_FILE, ERR_R_SYS_LIB);
+        goto end;
+    }
+    if (type == SSL_FILETYPE_ASN1) {
+        j = ERR_R_ASN1_LIB;
+        x = d2i_X509_bio(in, NULL);
+    } else if (type == SSL_FILETYPE_PEM) {
+        j = ERR_R_PEM_LIB;
+        x = PEM_read_bio_X509(in, NULL, ctx->default_passwd_callback,
+                              ctx->default_passwd_callback_userdata);
+    } else {
+        SSLerr(SSL_F_SSL_CTX_USE_ORIG_CERTIFICATE_FILE, SSL_R_BAD_SSL_FILETYPE);
+        goto end;
+    }
+
+    if (x == NULL) {
+        SSLerr(SSL_F_SSL_CTX_USE_ORIG_CERTIFICATE_FILE, j);
+        goto end;
+    }
+
+    ret = SSL_CTX_use_orig_certificate(ctx, x);
+ end:
+    X509_free(x);
+    BIO_free(in);
+    return (ret);
+}
+
+#endif /* OPENSSL_NO_TTPA */
+
+#ifndef OPENSSL_NO_MATLS
+#define TMP_SIZE 1024
+
+int SSL_use_proof_file(SSL *s, const char *file)
+{
+#ifdef MB_DEBUG
+	printf("[DEBUG] %s:%s:%d: Load proof file\n", __FILE__, __func__, __LINE__);
+#endif
+	int offset = 0;
+	BIO *in;
+	unsigned char tmp[TMP_SIZE];
+
+	in = BIO_new(BIO_s_file());
+
+	if (in == NULL)
+	{
+		SSLerr(SSL_F_SSL_USE_PROOF_FILE, ERR_R_BUF_LIB);
+		goto end;
+	}
+
+	if (BIO_read_filename(in, file) <= 0)
+	{
+		SSLerr(SSL_F_SSL_USE_PROOF_FILE, ERR_R_SYS_LIB);
+		goto end;
+	}
+
+	while (!BIO_eof(in))
+		offset += BIO_read(in, tmp + offset, 1024);
+
+	s->proof_length = offset;
+	s->proof = OPENSSL_malloc(s->proof_length);
+	memcpy(s->proof, tmp, s->proof_length);
+end:
+	BIO_free(in);
+	return 1;
+}
+
+int SSL_register_id(SSL *s)
+{
+  BIO *key;
+  EVP_PKEY *pkey;
+
+  if (s->x509)
+  {
+    key = BIO_new(BIO_f_md());
+    BIO_set_md(key, EVP_sha256());
+
+    pkey = X509_get_pubkey(s->x509);
+    PEM_write_bio_PUBKEY(key, pkey);
+
+    s->id_length = TLS_MD_ID_SIZE;
+    BIO_gets(key, s->id, s->id_length);
+
+    PRINTK("Identifier in Function", s->id, s->id_length);
+    
+    BIO_free_all(key);
+    EVP_PKEY_free(pkey);
+
+    return 1;
+  }
+
+  return 0;
+}
+
+int SSL_CTX_use_proof_file(SSL_CTX *ctx, const char *file)
+{
+#ifdef MB_DEBUG
+	printf("[DEBUG] %s:%s:%d: Load proof file\n", __FILE__, __func__, __LINE__);
+#endif
+	int offset = 0;
+	BIO *in;
+	unsigned char tmp[TMP_SIZE];
+
+	in = BIO_new(BIO_s_file());
+
+	if (in == NULL)
+	{
+		SSLerr(SSL_F_SSL_CTX_USE_PROOF_FILE, ERR_R_BUF_LIB);
+		goto end;
+	}
+
+	if (BIO_read_filename(in, file) <= 0)
+	{
+		SSLerr(SSL_F_SSL_CTX_USE_PROOF_FILE, ERR_R_SYS_LIB);
+		goto end;
+	}
+
+	while (!BIO_eof(in))
+		offset += BIO_read(in, tmp, 1024);
+
+	ctx->proof_length = offset;
+	ctx->proof = OPENSSL_malloc(ctx->proof_length);
+	memcpy(ctx->proof, tmp, ctx->proof_length);
+end:
+	BIO_free(in);
+	return 1;
+}
+
+int SSL_CTX_register_id(SSL_CTX *ctx)
+{
+  BIO *key, *id;
+  EVP_PKEY *pkey;
+
+  if (ctx->x509)
+  {
+    if (!(id = BIO_new(BIO_s_mem())))
+    {
+      MA_LOG("Error making memory");
+    }
+    else
+    {
+      MA_LOG("Making memory success");
+    }
+
+    if (!(key = BIO_new(BIO_f_md())))
+    {
+      MA_LOG("Error making md filter");
+    }
+    else
+    {
+      MA_LOG("Making md filter success");
+    }
+
+    if (!BIO_set_md(key, EVP_sha256()))
+    {
+      MA_LOG("Error setting sha256");
+    }
+    else
+    {
+      MA_LOG("Setting sha256 success");
+    }
+
+    BIO_push(key, id);
+
+    if (!(pkey = X509_get_pubkey(ctx->x509)))
+    {
+      MA_LOG("Error getting public key from certificate");
+    }
+    else
+    {
+      MA_LOG("Getting public key from certificate");
+    }
+
+    if (!i2d_PUBKEY_bio(key, pkey))
+    {
+      MA_LOG("Error writing public key data in DER format\n");
+    }
+    else
+    {
+      MA_LOG("Writing public key data in DER format\n");
+    }
+
+    ctx->id_length = TLS_MD_ID_SIZE;
+    ctx->id = (unsigned char *)malloc(ctx->id_length);
+    BIO_gets(key, ctx->id, TLS_MD_ID_SIZE);
+
+    PRINTK("ID", ctx->id, ctx->id_length);
+
+    BIO_free_all(key);
+    EVP_PKEY_free(pkey);
+
+    return 1;
+  }
+
+  return 0;
+}
+#endif /* OPENSSL_NO_MATLS */
 
 static int ssl_set_pkey(CERT *c, EVP_PKEY *pkey)
 	{
@@ -491,6 +919,10 @@ int SSL_CTX_use_certificate_file(SSL_CTX *ctx, const char *file, int type)
 		SSLerr(SSL_F_SSL_CTX_USE_CERTIFICATE_FILE,j);
 		goto end;
 		}
+
+#ifndef OPENSSL_NO_MATLS
+  ctx->x509 = x;
+#endif /* OPENSSL_NO_MATLS */
 
 	ret=SSL_CTX_use_certificate(ctx,x);
 end:

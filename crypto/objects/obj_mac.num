@@ -917,3 +917,12 @@ aes_128_cbc_hmac_sha1		916
 aes_192_cbc_hmac_sha1		917
 aes_256_cbc_hmac_sha1		918
 rsaesOaep		919
+middleboxInfo		920
+id_md		921
+md_url		922
+md_tos		923
+md_perm		924
+md_tos_waf		925
+md_tos_av		926
+md_perm_read		927
+md_perm_write		928
